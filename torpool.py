@@ -1,5 +1,4 @@
 import hashlib
-
 import stem.control
 import logging
 import random
@@ -16,7 +15,6 @@ class TorPool:
         self.controller = stem.control.Controller.from_port(address=tor_addr, port=controller_port)
         self.controller.authenticate()
         self.circuits = []
-        self.sticky_sessions = {}  # map of username -> circuit_id for sticky sessions
 
         logging.info(f"connected to Tor controller at {tor_addr}:{controller_port}")
         self.controller.add_event_listener(self._event_listener, stem.control.EventType.STREAM, stem.control.EventType.CIRC)
@@ -106,33 +104,22 @@ class TorPool:
                 time.sleep(5)
 
     def _event_listener(self, event):
-        logging.debug(f"tor event: {event.type} {event}")
+        # logging.debug(f"tor event: {event.type} {event}")
         if event.type == stem.control.EventType.STREAM:
             # when __LeaveStreamsUnattached is set, streams (socks clients) won't be attached to circuits automatically
             # so we can manually attach streams to custom 1-hop circuits
             if event.status == 'CONTROLLER_WAIT':
                 username = event.keyword_args.get("SOCKS_USERNAME")
                 if username:
-                    circ = None
-                    # find existing sticky session for this username, if any
-                    if self.sticky_sessions.get(username):
-                        circ = self.sticky_sessions[username]
-                        if circ['circ_id'] not in [c['circ_id'] for c in self.circuits]:
-                            logging.warning(f"sticky session for username {username} points to circuit {circ['circ_id']} which is no longer alive, removing")
-                            del self.sticky_sessions[username]
-                            circ = None
-                    # create a new sticky session for this username if none exists, choosing the least frequently used circuit
-                    if not circ:
-                        circ = min(self.circuits, key=lambda c: sum(1 for s in self.sticky_sessions.values() if s['circ_id'] == c['circ_id']))
-                        self.sticky_sessions[username] = circ
-                        logging.info(f"created sticky session for username {username} to circuit {circ['circ_id']} {circ['exit_node']['address']}")
+                    # keep the session sticky to the same circuit if a username is provided (using highest random weight hash of username + circuit id)
+                    circ = max(self.circuits, key=lambda c: int(hashlib.md5((username + str(c['circ_id'])).encode()).hexdigest(), 16))
                 else:
                     # attach new streams to random 1-hop circuits if no username
                     circ = random.choice(self.circuits)
 
                 circ_id, address = circ['circ_id'], circ['exit_node']['address']
                 self.controller.attach_stream(event.id, circ_id)
-                logging.info(f"attached stream {event.id} to circuit {circ_id} {address}")
+                logging.info(f"attached stream {event.id} (username: {username}) to circuit {circ_id} {address}")
 
     def circuit_count(self):
         return len(self.circuits)
