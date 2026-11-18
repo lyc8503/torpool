@@ -1,6 +1,7 @@
 import stem.control
 import logging
 import random
+import threading
 
 
 class TorPool:
@@ -14,7 +15,8 @@ class TorPool:
         self.circuits = []
         logging.info(f"connected to Tor controller at {tor_addr}:{controller_port}")
         self.controller.add_event_listener(self.event_listener, stem.control.EventType.STREAM, stem.control.EventType.CIRC)
-        # TODO: self circuit maintain
+        self.maintain_thread = threading.Thread(target=self.maintain_circuits, daemon=True)
+        self.maintain_thread.start()
 
     def get_eligible_exit_nodes(self):
         exits = []
@@ -53,8 +55,18 @@ class TorPool:
                 'circ_id': circ_id,
                 'exit_node': exit_node
             })
+        # TODO: remove stale curcuits, maintain count
 
     def event_listener(self, event):
-        # 
-        logging.debug(f"tor event: {event}")
+        # logging.debug(f"tor event: {event.type} {event}")
+
+        if event.type == stem.control.EventType.STREAM:
+            if event.status == 'CONTROLLER_WAIT':
+                # attach new streams to random circuits
+                circ = random.choice(self.circuits)
+                circ_id, address = circ['circ_id'], circ['exit_node']['address']
+                self.controller.attach_stream(event.id, circ_id)
+                logging.info(f"attached stream {event.id} to circuit {circ_id} {address}")
+
+        # TODO: remove curcuit when it's destroyed
 
