@@ -5,7 +5,7 @@ coloredlogs.install(level=logging.DEBUG)
 
 from torpool import TorPool
 
-pool = TorPool(controller_port=19051, socks_port=19050, exit_count=5)
+pool = TorPool(controller_port=19051, socks_port=19050, exit_count=100)
 
 
 while True:
