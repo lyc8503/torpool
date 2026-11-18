@@ -7,10 +7,10 @@ import time
 
 
 class TorPool:
-    def __init__(self, tor_addr='127.0.0.1', controller_port=9051, socks_port=9050, exit_count=10, close_existing_ctl_circuits=True):
+    def __init__(self, tor_addr='127.0.0.1', controller_port=9051, exit_count=10, close_existing_circ=True, new_circ_timeout=5):
         self.tor_addr = tor_addr
-        self.socks_port = socks_port
         self.exit_count = exit_count
+        self.new_circ_timeout = new_circ_timeout
 
         self.controller = stem.control.Controller.from_port(address=tor_addr, port=controller_port)
         self.controller.authenticate()
@@ -20,7 +20,7 @@ class TorPool:
         self.controller.add_event_listener(self._event_listener, stem.control.EventType.STREAM, stem.control.EventType.CIRC)
 
         # close leftover controller circuits from previous runs, if any
-        if close_existing_ctl_circuits:
+        if close_existing_circ:
             self._close_ctl_circuits()
 
         # thread to maintain the desired number of 1-hop circuits to exit nodes
@@ -59,7 +59,7 @@ class TorPool:
         # create a new 1-hop circuit to the given exit node
         # properly configured tor instance will authenticate us as relay,
         # so the peer exit will allow us using this circuit for outgoing connections
-        circ_id = self.controller.new_circuit([exit_node['fingerprint']], purpose='controller', await_build=True, timeout=10)
+        circ_id = self.controller.new_circuit([exit_node['fingerprint']], purpose='controller', await_build=True, timeout=self.new_circ_timeout)
         logging.debug(f"new circuit {circ_id} to exit node {exit_node['nickname']} ({exit_node['address']})")
         return circ_id
 
