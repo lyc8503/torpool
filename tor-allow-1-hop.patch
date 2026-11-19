@@ -1,0 +1,14 @@
+--- a/src/feature/control/control_cmd.c
++++ b/src/feature/control/control_cmd.c
+@@ -991,8 +991,9 @@
+                            "Can't attach stream to non-open origin circuit");
+     return 0;
+   }
+-  /* Is this a single hop circuit? */
+-  if (circ && (circuit_get_cpath_len(circ)<2 || hop==1)) {
++  /* PATCHED: allow attaching streams to one-hop circuits.
++   * A relay-authenticated client legitimately uses a single exit hop. */
++  if (0 && circ && (circuit_get_cpath_len(circ)<2 || hop==1)) {
+     control_write_endreply(conn, 551,
+                            "Can't attach stream to this one-hop circuit.");
+     return 0;
