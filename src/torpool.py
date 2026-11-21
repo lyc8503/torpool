@@ -59,7 +59,7 @@ class TorPool:
         # create a new 1-hop circuit to the given exit node
         # properly configured tor instance will authenticate us as relay,
         # so the peer exit will allow us using this circuit for outgoing connections
-        circ_id = self.controller.new_circuit([exit_node['fingerprint']], purpose='controller', await_build=True, timeout=self.new_circ_timeout)
+        circ_id = self.controller.new_circuit([exit_node['fingerprint']], purpose='controller')
         logging.debug(f"new circuit {circ_id} to exit node {exit_node['nickname']} ({exit_node['address']})")
         return circ_id
 
@@ -89,15 +89,28 @@ class TorPool:
                     if len(unconnected_nodes) < needed:
                         logging.warning(f"not enough new exit candidates: {len(unconnected_nodes)} < {self.exit_count - len(self.circuits)}")
 
+                    needed = min(needed, 200)
+                    pending_circuits = []
                     for n in unconnected_nodes[:needed]:
                         try:
                             circ_id = self._new_circuit(n)
-                            self.circuits.append({
+                            pending_circuits.append({
                                 'circ_id': circ_id,
                                 'exit_node': n
                             })
                         except Exception as e:
                             logging.warning(f"failed to create circuit to exit node {n['nickname']} ({n['address']}): {e}")
+
+                    time.sleep(self.new_circ_timeout)
+                    built = set(c.id for c in self.controller.get_circuits() if c.status == 'BUILT')
+                    for c in pending_circuits:
+                        if c['circ_id'] not in built:
+                            logging.warning(f"circuit {c['circ_id']} to exit node {c['exit_node']['nickname']} ({c['exit_node']['address']}) not built after {self.new_circ_timeout}s")
+                            continue
+                        logging.info(f"circuit {c['circ_id']} to exit node {c['exit_node']['nickname']} ({c['exit_node']['address']}) built successfully")
+                        self.circuits.append(c)
+
+                    logging.info(f"now have {len(self.circuits)} exit circuits")
             except Exception as e:
                 logging.error(f"unexpected error in maintain_circuits: {e}")
             finally:
